@@ -8,7 +8,7 @@ if (matchNotifStart === -1) {
     console.log("Could not find match-notification");
     process.exit(1);
 }
-
+ 
 // Keep everything up to the match-notification block
 let fixed = content.substring(0, matchNotifStart);
 

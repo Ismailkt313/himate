@@ -1,9 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:himate/auth/service/auth_service.dart';
+import 'package:himate/config/api_config.dart';
 import '../../utils/storage.dart';
 
 class ApiService {
-  static const baseUrl = 'https://datebackend.onrender.com/api';
+  static String get baseUrl => ApiConfig.baseUrl;
   late final Dio dio;
 
   ApiService._internal(this.dio);
@@ -19,7 +20,7 @@ class ApiService {
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
         final token = await Storage.getAccessToken();
-        if (token != null) options.headers['Authorization'] = 'Bearer \$token';
+        if (token != null) options.headers['Authorization'] = 'Bearer $token';
         handler.next(options);
       },
       onError: (err, handler) async {
@@ -29,7 +30,7 @@ class ApiService {
           if (refreshed) {
             final token = await Storage.getAccessToken();
             final opts = err.requestOptions;
-            opts.headers['Authorization'] = 'Bearer \$token';
+            opts.headers['Authorization'] = 'Bearer $token';
             try {
               final cloneResp = await dio.fetch(opts);
               return handler.resolve(cloneResp);
