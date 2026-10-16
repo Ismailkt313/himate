@@ -39,17 +39,59 @@ connectDB();
     }
 });
 
-// Security middleware
+// 1. CORS Configuration & Preflight Handling (placed at top before helmet, rateLimit, and routes)
+const corsOptions = {
+    origin: (origin, callback) => {
+        // Allow all origins (mobile apps, Flutter Web on any localhost port, production domain, etc.)
+        callback(null, true);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+        'Origin',
+        'X-Requested-With',
+        'Content-Type',
+        'Accept',
+        'Authorization',
+        'Access-Control-Allow-Headers',
+        'Access-Control-Request-Method',
+        'Access-Control-Request-Headers'
+    ],
+    exposedHeaders: ['Authorization'],
+    optionsSuccessStatus: 200
+};
+
+// Immediate preflight handler for OPTIONS requests
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+    } else {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader(
+        'Access-Control-Allow-Headers',
+        req.headers['access-control-request-headers'] ||
+        'Origin, X-Requested-With, Content-Type, Accept, Authorization'
+    );
+    res.setHeader('Access-Control-Max-Age', '86400');
+
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+    next();
+});
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
+// 2. Security middleware
 app.use(helmet({
     crossOriginEmbedderPolicy: false,
-    contentSecurityPolicy: {
-        directives: {
-            defaultSrc: ["'self'"],
-            styleSrc: ["'self'", "'unsafe-inline'"],
-            imgSrc: ["'self'", "data:", "https:"],
-            scriptSrc: ["'self'"]
-        }
-    },
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: false,
     hsts: {
         maxAge: 31536000,
         includeSubDomains: true,
@@ -66,10 +108,11 @@ app.use((req, res, next) => {
     next();
 });
 
-// Rate limiting
+// 3. Rate limiting (skip OPTIONS preflights)
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // limit each IP to 100 requests per windowMs
+    max: 200, // limit each IP to 200 requests per windowMs
+    skip: (req) => req.method === 'OPTIONS',
     message: {
         error: "Too many requests from this IP, please try again later."
     },
@@ -78,30 +121,11 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// CORS — allow all origins including mobile apps (no Origin header)
-app.use(cors({
-    origin: (origin, callback) => {
-        // Allow requests with no origin (mobile apps, curl, etc)
-        if (!origin) return callback(null, true);
-        // In production, restrict to your frontend domain
-        const allowedOrigins = process.env.FRONTEND_URL 
-            ? [process.env.FRONTEND_URL, 'http://localhost:3000', "https://himate-nteg.onrender.com"]
-            : ['http://localhost:3000',"https://himate-nteg.onrender.com"];
-        if (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
-            return callback(null, true);
-        }
-        callback(new Error('Not allowed by CORS'));
-    },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true,
-    maxAge: 86400
-}));
-
-// Stricter rate limiting for auth endpoints (relaxed in dev)
+// Stricter rate limiting for auth endpoints (skip OPTIONS preflights)
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: process.env.NODE_ENV === 'production' ? 10 : 100,
+    max: process.env.NODE_ENV === 'production' ? 50 : 200,
+    skip: (req) => req.method === 'OPTIONS',
     message: {
         error: "Too many authentication attempts, please try again later."
     }
@@ -156,7 +180,7 @@ app.get("/api/status", (req, res) => {
 // Socket.IO Setup with enhanced configuration
 const io = new Server(server, {
     cors: {
-        origin: process.env.FRONTEND_URL || "*",
+        origin: (origin, callback) => callback(null, true),
         methods: ["GET", "POST"],
         credentials: true
     },
